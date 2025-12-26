@@ -71,6 +71,7 @@ int setaffinity_processor_unbind(int pid)
   return setaffinity_processor_bind(pid, PBIND_NONE);
 }
 
+asdfafasdf
 
 MODULE = Sys::CpuAffinity    PACKAGE = Sys::CpuAffinity
 

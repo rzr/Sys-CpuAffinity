@@ -49,12 +49,13 @@ ___
 # some platform specific notes ...
 
 print "\n";
-if ($^O =~ /solaris/i) {
+if ($^O =~ /aix/i) {
   print <<"";
-$^O users: this platform's  pbind(1m)  utility and  processor_bind(2)
+$^O users: this platform's  bindprocessor(1)  utility and  bindprocessor(2)
 library function only allow a process to be bound to a single
 CPU. Calls to  &Sys::CpuAffinity::setAffinity  that specify more than
-one processor might only bind the process to a single processor.
+one but fewer than all processors might have the effect of only
+binding the process to a single processor.
 
 ;                                                                     #';
 }
@@ -209,7 +210,7 @@ my $builder = $builderclass->new(
 	module_name         => 'Sys::CpuAffinity',
 	license             => 'perl',
 	dist_author         => q[Marty O'Brien <mob@cpan.org>],
-        dist_version        => '1.08',
+        dist_version        => '1.09',
 	#dist_version_from   => 'lib/Sys/CpuAffinity.pm',
 	build_requires      => {
 		'Module::Build'      => 0.25,

@@ -1,5 +1,11 @@
 Revision history for Sys-CpuAffinity
 
+1.09	2016-07-29
+	Improved support for solaris, including binding to arbitrary
+	subsets of all cores.
+	Prefer  Math::BigInt->new(2)**$n  to  1<<$n  to support >64 cores.
+	Improved support for aix
+
 1.08	2016-07-22
 	RT #94560-even more improved support for Linux systems with >32 cpus
 

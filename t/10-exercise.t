@@ -1,9 +1,11 @@
 use Sys::CpuAffinity;
 use Test::More tests => 14;
+use Math::BigInt;
 use strict;
 use warnings;
 
 my $ntests = 14;
+sub TWO () { goto &Sys::CpuAffinity::TWO }
 
 my $n = Sys::CpuAffinity::getNumCpus();
 ok($n > 0, "discovered $n processors");
@@ -28,7 +30,7 @@ if ($n <= 1) {
 }
 
 my $y = Sys::CpuAffinity::getAffinity($$) || 0;
-ok($y > 0 && $y < 2**$n, "got current process affinity $y");
+ok($y > 0 && $y < TWO**$n, "got current process affinity $y");
 
 my $simpleMask = getSimpleMask($n);
 my $clearMask  = getUnbindMask($n);
@@ -48,7 +50,8 @@ $z = Sys::CpuAffinity::setAffinity($$, $clearMask);
 ok($z != 0, "clear simple setCpuAffinity returned non-zero");
 
 my $y2 = Sys::CpuAffinity::getAffinity($$) || 0;
-ok($y2 + 1 == 2**$n, "bind to all processors successful $y2 == ".(2**$n)."-1");
+ok($y2 + 1 == TWO**$n,
+   "bind to all processors successful $y2 == ".(TWO**$n)."-1");
 
 # set and clear complex mask (more than one processor, but less than all)
 
@@ -58,7 +61,7 @@ SKIP: {
     skip "complex mask test. Need >2 cpus to form complex mask", 2;
   }
 
-  if ($^O =~ /solaris/) {
+  if ($^O =~ /aix/) {
     skip "complex mask test. Processes in $^O may only bind to "
       . "1 or all processors", 2;
   }
@@ -77,20 +80,19 @@ $z = Sys::CpuAffinity::setAffinity($$, -1);
 ok($z != 0, "setAffinity(-1) returned non-zero");
 
 my $y4 = Sys::CpuAffinity::getAffinity($$) || 0;
-ok($y4+1 == 2**$n, "setAffinity(-1) binds to all processors");
+ok($y4+1 == TWO**$n, "setAffinity(-1) binds to all processors");
 
 
 
 {
   # passing invalid arguments should fail.
-
   my $a = Sys::CpuAffinity::getAffinity(173551) || '';
   my $b = Sys::CpuAffinity::setAffinity(173551, -1) || '';
   my $c = Sys::CpuAffinity::getAffinity(173551) || '';
   my $d = Sys::CpuAffinity::setAffinity(-173551, 1) || '';
   my $e = Sys::CpuAffinity::getAffinity(-173551) || '';
   my $f = Sys::CpuAffinity::setAffinity($$, 0) || '';
-  my $g = Sys::CpuAffinity::setAffinity($$, 2 ** $n) || '';
+  my $g = Sys::CpuAffinity::setAffinity($$, TWO ** $n) || '';
   ok(!($a||$b||$c||$d||$e||$f||$g),
      "passing invalid args to getAffinity, setAffinity fails")
     or diag("$a / $b / $c / $d / $e / $f / $g");
@@ -109,8 +111,9 @@ if (defined($pid) && $pid == 0) {
   my $y3 = Sys::CpuAffinity::getAffinity($$) || 0;
   print F "getAffinity:$y3\n";
 
-  # solaris can only bind a process to one processor
-  my $r3 = $^O =~ /solaris/i
+  # <X>solaris can only bind a process to one processor</X> not true anymore
+  # aix can only bind a process to one processor
+  my $r3 = $^O =~ /aix/i
 	? getSimpleMask($n)
 	: getComplexMask($n);
 
@@ -138,7 +141,7 @@ if ($ENV{DEBUG}) {
 open F, '<', $f;
 my $g = <F>;
 my ($y3) = $g =~ /getAffinity:(\d+)/;
-ok(defined($y3) && $y3 > 0 && $y3 < (2**$n), 
+ok(defined($y3) && $y3 > 0 && $y3 < (TWO**$n), 
    "got pseudo-proc affinity $y3")
   or diag("\$y3=$y3, child output [1] was: $g");
 
@@ -166,7 +169,7 @@ ok(defined($y4) && $y4 == $r3,
 sub getSimpleMask {
   my $n = shift;
   my $r = int(rand() * $n);
-  return 1 << $r;
+  return TWO ** $r;
 }
 
 sub getComplexMask {
@@ -174,17 +177,17 @@ sub getComplexMask {
   if ($n < 3) {
     return getSimpleMask($n);
   }
-  my $s = 2 ** $n;
+  my $s = TWO ** $n;
   my $r;
   do {
-    $r = 1 + int(rand($s - 2));
+    $r = Math::BigInt->new(1) + int(rand($s - 2));
   } while ( $r == 0                  # don't want no bits set 
 	   || ($r & ($r-1)) == 0     # don't want one bit set
-	   || ($r+1) == 2**$n );     # don't want all bits set
+	   || ($r+1) == $s );        # don't want all bits set
   return $r;
 }
 
 sub getUnbindMask {
   my $n = shift;
-  return 2 ** $n - 1;
+  return TWO ** $n - 1;
 }

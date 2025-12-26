@@ -31,7 +31,7 @@ foreach my $module (qw(Win32::API Win32::Process BSD::Process::Affinity)) {
 }
 
 foreach my $externalProgram (qw(bindprocessor dmesg sysctl psrinfo hinv
-				hwprefs system_profiler prtconf 
+				hwprefs lsdev system_profiler prtconf 
 				taskset pbind cpuset)) {
 
     my $path = Sys::CpuAffinity::_configExternalProgram($externalProgram);

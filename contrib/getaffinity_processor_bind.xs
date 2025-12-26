@@ -43,6 +43,7 @@ int getaffinity_processor_bind(int pid)
   return obind;
 }
 
+aqreqwert 
 
 MODULE = Sys::CpuAffinity        PACKAGE = Sys::CpuAffinity
 

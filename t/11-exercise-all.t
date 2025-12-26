@@ -1,9 +1,12 @@
 use lib qw(blib/lib blib/arch);
 use Sys::CpuAffinity;
 use Test::More tests => 2;
+use Math::BigInt;
 use strict qw(vars subs);
 use warnings;
 $| = 1;
+
+sub TWO () { goto &Sys::CpuAffinity::TWO }
 
 #
 # Exercise all of the methods in the toolbox to
@@ -104,7 +107,7 @@ sub EXERCISE_GET_AFFINITY {
 	my $sub = 'Sys::CpuAffinity::_getAffinity_with_' . $s;
 	printf "    %-30s ==> ", $s;
 	my $z = eval { $sub->($pid) };
-	printf "%d\n", $z || 0;
+	printf "%s\n", $z || 0;
 	$success += ($z||0) > 0;
 
 	if ($z > 0) {
@@ -185,10 +188,17 @@ sub EXERCISE_SET_AFFINITY {
 
     my ($TARGET,$LAST_TARGET) = (0,0);
     my @mask = ();
-    while (@mask < 500) {
-	$TARGET = int(rand() * (2**$np - 1)) + 1
-	    while $TARGET == $LAST_TARGET;
-	$LAST_TARGET = $TARGET;
+    my $_2_np_1 = TWO ** $np - 1;
+    my $nc = $np > 10 ? 10 : $np;
+    while (@mask < 100) {
+        $TARGET = 0;
+        for my $i (0 .. @mask) {
+            my $c = int(rand() * $np);
+            $TARGET ^= TWO ** $c;
+        }
+        redo if $TARGET == 0;
+        redo if $TARGET == $LAST_TARGET && $np > 1;
+        $LAST_TARGET = $TARGET;
 	push @mask, $TARGET;
     }
 
@@ -211,13 +221,13 @@ sub EXERCISE_SET_AFFINITY {
 
 	my $s = "Sys::CpuAffinity::_setAffinity_with_$technique";
 	eval { $s->($pid,$mask) };
-	printf "    %-30s => %3u ==> ", $technique, $mask;
+	printf "    %-30s => %3s ==> ", $technique, $mask;
 	my $r = Sys::CpuAffinity::getAffinity($pid);
 	my $result = $r==$rr ? "FAIL" : " ok ";
 	if ($r != $rr) {
 	  $success++;
 	}
-	printf "%3u   [%s]\n", $r, $result;
+	printf "%3s   [%s]\n", $r, $result;
     }
 
     if ($success == 0) {

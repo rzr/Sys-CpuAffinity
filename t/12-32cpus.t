@@ -1,10 +1,10 @@
 use Sys::CpuAffinity;
 use Test::More tests => 6;
+use Math::BigInt;
 use strict;
 use warnings;
 
-# version 0.90 had a bug for systems with 32-bit integers and 32 processors 
-# (so that  1 << ncpu == 1)
+sub TWO () { goto &Sys::CpuAffinity::TWO }
 
 my $ncpus = Sys::CpuAffinity::getNumCpus();
 if ($ncpus <= 1) {
@@ -23,6 +23,7 @@ if ($^O =~ /darwin/i || $^O =~ /MacOS/i) {
 my $mask = getSimpleMask($ncpus);
 my $clear1 = getUnbindMask($ncpus);
 my $clear2 = -1;
+
 my $clear = $^O =~ /solaris|irix/i  ? $clear2 : $clear1;
 
 if ($ncpus < 32) {
@@ -65,5 +66,5 @@ sub getSimpleMask {
 
 sub getUnbindMask {
   my $n = shift;
-  return 2 ** $n - 1;
+  return TWO ** $n - 1;
 }

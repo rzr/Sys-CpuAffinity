@@ -1,4 +1,5 @@
 package Sys::CpuAffinity;
+use Math::BigInt;
 use Carp;
 use warnings;
 use strict;
@@ -8,10 +9,12 @@ use base qw(DynaLoader);
 ## no critic (DotMatch,LineBoundary,Sigils,Punctuation,Quotes,Magic,Checked)
 ## no critic (NamingConventions::Capitalization,BracedFileHandle)
 
-our $VERSION = '1.08';
+our $VERSION = '1.09';
 our $DEBUG = $ENV{DEBUG} || 0;
 our $XS_LOADED = 0;
 eval { bootstrap Sys::CpuAffinity $VERSION; $XS_LOADED = 1 };
+
+sub TWO () { Math::BigInt->new(2) }
 
 sub import {
 }
@@ -54,12 +57,13 @@ sub getAffinity {
     my $mask = 0
 	|| _getAffinity_with_taskset($pid)
 	|| _getAffinity_with_xs_sched_getaffinity($pid)
-	|| _getAffinity_with_xs_processor_bind($pid)
 	|| _getAffinity_with_xs_cpuset_getaffinity($pid)
 	|| _getAffinity_with_xs_pthread_self_getaffinity($pid)
 	|| _getAffinity_with_BSD_Process_Affinity($pid)
 	|| _getAffinity_with_cpuset($pid)
 	|| _getAffinity_with_pbind($pid)
+        || _getAffinity_with_psaix($pid)
+	|| _getAffinity_with_xs_processor_bind($pid)
 	|| _getAffinity_with_xs_win32($pid)
 	|| _getAffinity_with_xs_irix_sysmp($pid)
 	|| _getAffinity_with_Win32Process($wpid)
@@ -79,7 +83,7 @@ sub _sanitize_set_affinity_args {
     }
     my $np = getNumCpus();
     if ($mask == -1 && $np > 0) {
-	$mask = (2 ** $np) - 1;
+	$mask = (TWO ** $np) - 1;
     }
     if ($mask <= 0) {
 	carp "Sys::CpuAffinity: invalid mask $mask in call to setAffinty\n";
@@ -89,7 +93,7 @@ sub _sanitize_set_affinity_args {
     # www.cpantesters.org/cpan/report/07107190-b19f-3f77-b713-d32bba55d77f
     # 1 << 32 == 1  caused test failure in v0.90
 
-    my $maxmask = 1 << $np;
+    my $maxmask = TWO ** $np;
     if ($maxmask > 1 && $mask >= $maxmask) {
 	my $newmask = $mask & ($maxmask - 1);
 	if ($newmask == 0) {
@@ -118,11 +122,11 @@ sub setAffinity {
 	|| _setAffinity_with_xs_sched_setaffinity($pid,$mask)
 	|| _setAffinity_with_BSD_Process_Affinity($pid,$mask)
 	|| _setAffinity_with_xs_cpuset_setaffinity($pid,$mask)  # XXX needs work
+	|| _setAffinity_with_pbind($pid,$mask)
 	|| _setAffinity_with_xs_processor_bind($pid,$mask)
 	|| _setAffinity_with_xs_pthread_self_setaffinity($pid,$mask)
 	|| _setAffinity_with_bindprocessor($pid,$mask)
 	|| _setAffinity_with_cpuset($pid,$mask)
-	|| _setAffinity_with_pbind($pid,$mask)
 	|| _setAffinity_with_xs_irix_sysmp($pid,$mask)
 	|| 0;
 }
@@ -133,12 +137,13 @@ sub getNumCpus {
 	return $_NUM_CPUS_CACHED;
     }
     return $_NUM_CPUS_CACHED =
-	_getNumCpus_from_Win32API()                  # XXX - broken
-	|| _getNumCpus_from_xs_Win32API_System_Info()
+	_getNumCpus_from_xs_Win32API_System_Info()
 	|| _getNumCpus_from_xs_cpusetGetCPUCount()
 	|| _getNumCpus_from_proc_cpuinfo()
 	|| _getNumCpus_from_proc_stat()
+	|| _getNumCpus_from_lsdev()
 	|| _getNumCpus_from_bindprocessor()
+	|| _getNumCpus_from_prtconf()   # slower than bindprocessor, lsdev
 	|| _getNumCpus_from_sysctl()
 	|| _getNumCpus_from_dmesg_bsd()
 	|| _getNumCpus_from_dmesg_solaris()
@@ -146,7 +151,6 @@ sub getNumCpus {
 	|| _getNumCpus_from_hinv()
 	|| _getNumCpus_from_hwprefs()
 	|| _getNumCpus_from_system_profiler()
-	|| _getNumCpus_from_prtconf()
 	|| _getNumCpus_from_Win32API_System_Info()
 	|| _getNumCpus_from_Test_Smoke_SysInfo()
 	|| _getNumCpus_from_ENV()
@@ -168,17 +172,6 @@ sub _getNumCpus_from_ENV {
 	}
     }
     return 0;
-}
-
-sub _getNumCpus_from_Win32API {
-    # GetActiveProcessorCount api function is only supported since Windows 7?
-    # !!! Unfortunately, it also seems to make Windows 7 crash !!!
-    return 0 if $^O ne 'MSWin32' && $^O ne 'cygwin';
-    return 0 if !_configModule('Win32::API');
-
-    # ALL_PROCESSOR_GROUPS: 0xffff
-    return ###_win32api('GetActiveProcessorCount', 0xffff) ||
-	0;
 }
 
 our %WIN32_SYSTEM_INFO = ();
@@ -306,19 +299,76 @@ sub _getNumCpus_from_proc_stat {
     return $num_processors || 0;
 }
 
+sub __set_aix_hints {
+    my ($bindprocessor) = @_;
+    our $AIX_HINTS = { READY => 0 };
+    if (!$bindprocessor) {
+        $bindprocessor = _configExternalProgram('bindprocessor');
+    }
+    return unless $bindprocessor;
+
+    my $vp_output = qx('$bindprocessor' -q 2>/dev/null);
+    if ($vp_output !~ s/The available process\S+ are:\s*//) {
+        return;
+    }
+    my @vp = split /\s+/, $vp_output;
+    @vp = sort { $a <=> $b } @vp;
+    $AIX_HINTS->{VIRTUAL_PROCESSORS} = \@vp;
+    my %vp = map {; $_ => -1 } @vp;
+    my $proc_output = qx('$bindprocessor' -s 0 2>/dev/null);
+    if ($proc_output !~ s/The available process\S+ are:\s*//) {
+        $AIX_HINTS->{PROCESSORS} = $AIX_HINTS->{VIRTUAL_PROCESSORS};
+        $AIX_HINTS->{NUM_CORES} = @vp;
+        return;
+    }
+    my @procs = split /\s+/, $proc_output;
+    @procs = sort { $a <=> $b } @procs;
+    $AIX_HINTS->{PROCESSORS} = \@procs;
+    $AIX_HINTS->{NUM_CORES} = @procs;
+    $AIX_HINTS->{READY} = 1;
+    if (@procs == @vp) {
+        foreach my $proc (@procs) {
+            $AIX_HINTS->{PROC_MAP}{$_} = $_;
+        }
+    } else {
+        my $core = -1;
+        foreach my $proc (@procs) {
+            $core++;
+            my $bound_output = qx('$bindprocessor' -b $proc 2>/dev/null);
+            if ($bound_output =~ s/The available process\S+ are:\s*//) {
+                my @bound_proc = split /\s+/, $bound_output;
+                foreach my $bound_proc (@bound_proc) {
+                    $AIX_HINTS->{PROC_MAP}{$bound_proc} = $core;
+                }
+            }
+        }
+    }
+}
+
 sub _getNumCpus_from_bindprocessor {
     return 0 if $^O !~ /aix/i;
     return 0 if !_configExternalProgram('bindprocessor');
     my $cmd = _configExternalProgram('bindprocessor');
-    my $bindprocessor_output = qx($cmd -q 2> /dev/null);
+    our $AIX_HINTS;
+    __set_aix_hints($cmd) unless $AIX_HINTS;
+    return $AIX_HINTS->{NUM_CORES} || 0;
+    #my $bindprocessor_output = qx($cmd -s 0 2>/dev/null); # or $cmd -q ?
+    my $bindprocessor_output = qx($cmd -q 2>/dev/null); # or $cmd -s 0 ?
     $bindprocessor_output =~ s/\s+$//;
     return 0 if !$bindprocessor_output;
 
     # Typical output: "The available processors are: 0 1 2 3"
-
     $bindprocessor_output =~ s/.*:\s+//;
-    my $num_processors = () = split /\s+/, $bindprocessor_output;
-    return $num_processors;
+    my @p = split /\s+/, $bindprocessor_output;
+    return 0+@p;
+}
+
+sub _getNumCpus_from_lsdev {
+    return 0 if $^O !~ /aix/i;
+    return 0 if !_configExternalProgram('lsdev');
+    my $cmd = _configExternalProgram('lsdev');
+    my @lsdev_output = qx($cmd -Cc processor 2>/dev/null);
+    return 0+@lsdev_output;
 }
 
 sub _getNumCpus_from_dmesg_bsd {
@@ -397,7 +447,8 @@ sub _getNumCpus_from_dmesg_solaris {
         }
     }
 
-    # this doesn't always work (www.cpantesters.org/cpan/report/35d7685a-70b0-11e0-9552-4df9775ebe45)
+    # this doesn't always work 
+    # (www.cpantesters.org/cpan/report/35d7685a-70b0-11e0-9552-4df9775ebe45)
     # what else should we check for in  @dmesg ?
     if ($ncpus == 0) {
       # ...
@@ -437,6 +488,7 @@ sub _getNumCpus_from_psrinfo {
     return 0 if !_configExternalProgram('psrinfo');
     my $cmd = _configExternalProgram('psrinfo');
     my @info = qx($cmd 2> /dev/null);
+#    return scalar grep /core/, qx($cmd -t 2>/dev/null);
     return scalar @info;
 }
 
@@ -445,7 +497,7 @@ sub _getNumCpus_from_hinv {   # NOT TESTED irix
     return 0 if !_configExternalProgram('hinv');
     my $cmd = _configExternalProgram('hinv');
 
-    # 1.01-1.08: debug
+    # 1.01-1.09: debug
     if ($Sys::CpuAffinity::IS_TEST && !$Sys::CpuAffinity::HINV_CALLED++) {
 	print STDERR "$cmd output:\n";
 	print STDERR qx($cmd);
@@ -454,7 +506,6 @@ sub _getNumCpus_from_hinv {   # NOT TESTED irix
 	print STDERR qx($cmd -c processor);
 	print STDERR "\n\n";
     }
-
 
     # found this in Test::Smoke::SysInfo v0.042 in Test-Smoke-1.43 module
     my @processor = qx($cmd -c processor 2> /dev/null);
@@ -470,7 +521,6 @@ sub _getNumCpus_from_hinv {   # NOT TESTED irix
 
     return $ncpu;
 }
-
 
 sub _getNumCpus_from_hwprefs {
     return 0 if $^O !~ /darwin/i && $^O !~ /MacOS/i;
@@ -502,17 +552,22 @@ sub _getNumCpus_from_system_profiler {  # NOT TESTED darwin
     return $ncpus;
 }
 
-sub _getNumCpus_from_prtconf {    # NOT TESTED
+sub _getNumCpus_from_prtconf {
     # solaris has a prtconf command, but I don't think it outputs #cpus.
     return 0 if $^O !~ /aix/i;
     return 0 if !_configExternalProgram('prtconf');
     my $cmd = _configExternalProgram('prtconf');
-    my @result;
-    @result = qx($cmd 2> /dev/null);
-    my ($result) = grep { /Number Of Processors:/ } @result;
-    return 0 if !$result;
-    my ($ncpus) = $result =~ /:\s+(\d+)/;
-    return $ncpus || 0;
+
+    # prtconf can take a long time to run, so cache the result
+    our $AIX_prtconf_cache;
+    if (!defined($AIX_prtconf_cache)) {
+        my @result = qx($cmd 2> /dev/null);
+        my ($result) = grep { /Number Of Processors:/ } @result;
+        return 0 if !$result;
+        my ($ncpus) = $result =~ /:\s+(\d+)/;
+        $AIX_prtconf_cache = $ncpus || 0;
+    }
+    return $AIX_prtconf_cache;
 }
 
 sub _getNumCpus_from_Test_Smoke_SysInfo {   # NOT TESTED
@@ -648,8 +703,6 @@ sub _getThreadAffinity_with_Win32API {
     }
 
     $processMask = _unpack_Win32_mask($processMask);
-    # $systemMask = _unpack_Win32_mask($systemMask);
-
     if ($processMask == 0) {
 	carp 'Process affinity apparently set to zero, ',
         	"will not be able to set/get compatible thread affinity\n";
@@ -764,16 +817,11 @@ sub _getAffinity_with_xs_sched_getaffinity {
 }
 
 sub _getAffinity_with_xs_DEBUG_sched_getaffinity {
-
-  # XXX - xs_sched_getaffinity_get_affinity crashes during some
-  # (but definitely not all) tests, and never on the Linux
-  # builds that I have available. Run a tracing version
-  # during t/11-exercise-all.t and see if we can figure
-  # out what might be going wrong.
-
-  my $pid = shift;
-  return 0 if !defined &xs_sched_getaffinity_get_affinity;
-  return xs_sched_getaffinity_get_affinity($pid,1);
+    # to debug errors in xs_sched_getaffinity_get_affinity
+    # during t/11-exercise-all.t
+    my $pid = shift;
+    return 0 if !defined &xs_sched_getaffinity_get_affinity;
+    return xs_sched_getaffinity_get_affinity($pid,1);
 }
 
 sub _getAffinity_with_pbind {
@@ -783,25 +831,77 @@ sub _getAffinity_with_pbind {
   my $pbind = _configExternalProgram('pbind');
   my $cmd = "$pbind -q $pid";
   my $pbind_output = qx($cmd 2> /dev/null);
+  if ($pbind_output eq '' && $? == 0) {
+
+      # pid is unbound  or  pid is invalid?
+      if (kill 'ZERO', $pid) {      
+          $pbind_output = 'not bound';
+      } else {
+          warn "_getAffinity_with_pbind: could not signal unbound pid $pid";
+          return;
+      }
+  }
 
   # possible output:
   #     process id $pid: $index
   #     process id $pid: not bound
+  #     pid \d+ \w+ bound to proccessor(s) \d+ \d+ \d+.
 
   if ($pbind_output =~ /not bound/) {
     my $np = getNumCpus();
     if ($np > 0) {
-      return (2 ** $np) - 1;
+      return (TWO ** $np) - 1;
     } else {
       carp '_getAffinity_with_pbind: ',
         "process $pid unbound but can't count processors\n";
-      return 2**32 - 1;
+      return TWO**32 - 1;
     }
   } elsif ($pbind_output =~ /: (\d+)/) {
     my $bound_processor = $1;
     return 1 << $bound_processor;
+  } elsif ($pbind_output =~ / bound to proces\S+\s+(.+)\.$/) {
+      my $cpus = $1;
+      if (!defined($cpus)) {
+          return 0;
+      }
+      my @cpus = split /\s+/, $1;
+      return _arrayToMask(@cpus);
   }
   return 0;
+}
+
+sub _getAffinity_with_psaix {
+    my ($pid) = @_;
+    return 0 if $^O !~ /aix/i;
+    my $pscmd = _configExternalProgram('ps');
+    return 0 if !$pscmd;
+    our $AIX_HINTS;
+    __set_aix_hints() unless $AIX_HINTS;
+
+    my ($header,$data) = qx(ps -o THREAD -p $pid 2>/dev/null);
+    return 0 unless $data;
+    $header =~ s/^\s+//;
+    my @h = split /\s+/, $header;
+    my @d = split /\s+/, $data;
+    my ($ipid) = grep { $h[$_] eq 'PID' } 0 .. $#h;
+    my ($ibnd) = grep { $h[$_] eq 'BND' } 0 .. $#h;
+    if ($ipid ne '' && $ibnd) {
+        my $pidd = $d[$ipid];
+        my $bndd = $d[$ibnd];
+        if ($pidd == $pid) {
+            $bndd =~ s/^\s+//;
+            $bndd =~ s/\s+$//;
+            if ($bndd eq '-') { # not bound
+                return (TWO ** getNumCpus()) - 1;
+            }
+            if ($AIX_HINTS) {
+                $bndd = $AIX_HINTS->{PROC_MAP}{$bndd} || $bndd;
+            }
+            return TWO ** $bndd;
+        }
+    }
+    warn "ps\\aix: could not parse result:\n$header$data\n";
+    return 0;
 }
 
 sub _getAffinity_with_xs_processor_bind {
@@ -811,7 +911,7 @@ sub _getAffinity_with_xs_processor_bind {
   if ($mask == -10) {
     my $np = getNumCpus();
     if ($np > 0) {
-      $mask = (2 ** $np) - 1;
+      $mask = (TWO ** $np) - 1;
       return $mask;
     } else {
       return 0;
@@ -915,7 +1015,7 @@ sub _getAffinity_with_xs_pthread_self_getaffinity {
 
     # must use $_NUM_CPUS_CACHED || ... to pass test t/12#2
     my $np = $_NUM_CPUS_CACHED || getNumCpus();
-    my $maxmask = 2 ** $np - 1;
+    my $maxmask = TWO ** $np - 1;
 
     my $y = _setAffinity_with_xs_pthread_self_setaffinity($pid, $maxmask);
     if ($y) {
@@ -939,9 +1039,9 @@ sub _getAffinity_with_xs_irix_sysmp {
     return 0;
   } elsif ($result == -1) { # unrestricted
     my $np = getNumCpus();
-    return 2 ** $np - 1;
+    return TWO ** $np - 1;
   } else {  # restricted to a single processor.
-    return 2 ** $result;
+    return TWO ** $result;
   }
 }
 
@@ -1093,16 +1193,26 @@ sub _setAffinity_with_BSD_Process_Affinity {
 sub _setAffinity_with_bindprocessor {
   my ($pid,$mask) = @_;
   return 0 if $^O !~ /aix/i;
+  return 0 if $pid < 0;
   return 0 if !_configExternalProgram('bindprocessor');
   my $cmd = _configExternalProgram('bindprocessor');
-  carp 'not implemented for aix';
-  return 0;
+  our $AIX_HINTS;
+  __set_aix_hints($cmd) unless $AIX_HINTS;
+
+  my @mask = _maskToArray($mask);
+  my @cores = map { $AIX_HINTS->{PROCESSORS}[$_] } @mask;
+  if (@cores == $AIX_HINTS->{NUM_CORES}) {
+      return system("'$cmd' -u $pid") == 0;
+  } elsif (@cores > 1) {
+      warn "_setAffinity_with_bindprocessor: will only set one core on aix";
+  }
+  return system("'$cmd' $pid $cores[0]") == 0;
 }
 
 sub _setAffinity_with_xs_processor_bind {
   my ($pid,$mask) = @_;
   my $np = getNumCpus();
-  if ($mask + 1 == 2 ** $np) {
+  if ($mask + 1 == TWO ** $np) {
     return 0 if !defined &xs_setaffinity_processor_unbind;
     my $result = xs_setaffinity_processor_unbind($pid);
     _debug("result from xs_setaffinity_processor_unbind: $result");
@@ -1119,7 +1229,6 @@ sub _setAffinity_with_xs_processor_bind {
     _debug("result from setaffinity_processor_bind: $result");
     return $result;
   }
-
 }
 
 sub _setAffinity_with_pbind {
@@ -1127,21 +1236,16 @@ sub _setAffinity_with_pbind {
   return 0 if $^O !~ /solaris/i;
   return 0 if !_configExternalProgram('pbind');
   my $pbind = _configExternalProgram('pbind');
-
   my @mask = _maskToArray($mask);
 
-  # a limitation of pbind (maybe it is a limitation of solaris)
-  # is that a process gets bound to ONE processor.
-  # Do we want to bind to a random element of $mask?
-  # Let's do the FIRST element for now.
-
+  my $cpus = join ",", @mask;
   my $np = getNumCpus();
   my $c1;
-  if ($np > 0 && $mask + 1 == 2 ** $np) {
-      $c1 = system "'$pbind' -u $pid > /dev/null 2>&1";
+  if (@mask == $np) {
+      # unbind
+      $c1 = system("'$pbind' -u $pid > /dev/null 2>&1");
   } else {
-      my $element = 0;
-      $c1 = system "'$pbind' -b $mask[$element] $pid > /dev/null 2>&1";
+      $c1 = system("'$pbind' -b -c $cpus -s $pid > /dev/null 2>&1");
   }
   return !$c1;
 }
@@ -1180,11 +1284,6 @@ sub _setAffinity_with_xs_win32 {
     }
     return 0;
   } elsif ($opid == $$) {
-
-#    if (0 && $^O ne 'cygwin' && defined &xs_win32_setAffinity_thread) {
-#      my $r = xs_win32_setAffinity_thread(0, $mask);
-#      return $r if $r;
-#    }
     if (defined &xs_win32_setAffinity_proc) {
       _debug('xs_win32_setAffinity_proc $$');
       return xs_win32_setAffinity_proc($pid,$mask);
@@ -1232,7 +1331,7 @@ sub _setAffinity_with_xs_irix_sysmp {
 
   my $np = getNumCpus();
   my $c1;
-  if ($np > 0 && $mask + 1 == 2 ** $np) {
+  if ($np > 0 && $mask + 1 == TWO ** $np) {
     return xs_irix_sysmp_setaffinity($pid, -1);
   } else {
       my $element = 0;
@@ -1258,9 +1357,9 @@ sub _maskToArray {
 
 sub _arrayToMask {
   my @procs = @_;
-  my $mask = 0;
+  my $mask = Math::BigInt->new(0);
   for my $proc (@procs) {
-    $mask |= 2 ** $proc;
+    $mask |= TWO ** $proc;
   }
   return $mask;
 }
@@ -1333,10 +1432,10 @@ sub _configExternalProgram {
     my $which = qx(which $program 2> /dev/null);
     $which =~ s/\s+$//;
 
-    if ($which =~ / not in /                    # negative output on irix
-        || $which =~ /no \Q$program\E in /      # negative output on solaris
-        || $which =~ /Command not found/        # negative output on openbsd
-        || ! -x $which                          # output is not executable, may be junk
+    if ($which =~ / not in /                # negative output on irix
+        || $which =~ /no \Q$program\E in /  # negative output on solaris
+        || $which =~ /Command not found/    # negative output on openbsd
+        || ! -x $which                      # output not executable, may be junk
        ) {
 
       $which = '';
@@ -1451,7 +1550,7 @@ Sys::CpuAffinity - Set CPU affinity for processes
 
 =head1 VERSION
 
-Version 1.08
+Version 1.09
 
 =head1 SYNOPSIS
 
@@ -1582,7 +1681,7 @@ such as an invalid process ID.
 
 Sets the CPU affinity of a process to the specified processors.
 First argument is the process ID. The second argument is either
-a bitmask of the desired procesors to assign to the PID, or an
+a bitmask of the desired processors to assign to the PID, or an
 array reference with the index values of processors to assign to
 the PID.
 
@@ -1594,7 +1693,7 @@ As a special case, using a C<$bitmask> value of C<-1> will clear
 the CPU affinities of a process -- setting the affinity to all
 available processors.
 
-On some platforms, notably Solaris and Irix, it is only possible to
+On some platforms, notably AIX and Irix, it is only possible to
 bind a process to a single CPU. If the processor mask argument to
 C<setAffinity> specifies more than one processor (but less than the
 total number of processors in your system), then this function might
@@ -1729,8 +1828,8 @@ Rumors of cpu affinity on other systems:
           FreeBSD:  /cpuset, cpuset_setaffinity(), cpuset_getaffinity()
           NetBSD:   /psrset
     Irix: /dplace, cpusetXXX() methods (with -lcpuset)
-          pthread_setrunon_np(int), pthread_getrunon_np(int*) to affine the current
-              thread with a single CPU.
+          pthread_setrunon_np(int), pthread_getrunon_np(int*) to affine 
+              the current thread with a single CPU.
           sysmp(MP_MUSTRUN_PID,cpu_id,process_id)
           sysmp(MP_RUNANYWHERE_PID,process_id)
           sysmp(MP_GETMUSTRUN_PID,process_id)
@@ -1741,7 +1840,8 @@ Rumors of cpu affinity on other systems:
       * processor sets are *exclusive*. processors assigned to a processor set
         can only be used by processes assigned to that set
       * processor sets can only be changed by sysadmin
-      * /cpuset in Irix has these same issues (different from /cpuset command in FreeBSD)
+      * /cpuset in Irix has these same issues (different from /cpuset command
+            in FreeBSD)
 
     Solaris:  Solaris::Lgrp module
         lgrp_affinity_set(P_PID,$pid,$lgrp,LGRP_AFF_xxx)
@@ -1749,6 +1849,12 @@ Rumors of cpu affinity on other systems:
         affinity_get
 
     AIX:  /bindprocessor, bindprocessor() in <sys/processor.h>
+        bindprocessor -q     lists virtual processors
+        bindprocessor -s 0   lists available cores
+        lsdev -Cc processor  lists available cores, consistent with bind... -s 0
+ 
+        bindprocessor -u pid    unbind process pid
+
     MacOS: thread_policy_set(),thread_policy_get() in <mach/thread_policy.h>
 
         In MacOS it is possible to assign threads to the same
@@ -1758,7 +1864,7 @@ Rumors of cpu affinity on other systems:
     DragonflyBSD: all CPAN tests are from single-core systems, so who knows
         whether any of this code works on that platform.
 
-    There has also hasn't been a CPAN tester with AIX yet.
+    There also hasn't been a CPAN tester with AIX yet.
 
 
 how to find the number of processors:
@@ -1771,10 +1877,8 @@ how to find the number of processors:
                solaris also has prtconf, but don't think it has cpu data
     BSD also has `sysctl`, they tell me
         AIX:   `smtctl | grep "Bind processor "`  ... not reliable
-        AIX has /proc/cpuinfo available, too (or so I've heard)
-        AIX:   `lsdev -Cc processor`
-        AIX:    `bindprocessor -q`
-
+        AIX:   `lsdev -Cc processor`  -- all processors
+        AIX:    `bindprocessor -q`    -- all shares of processors
 
 Some systems have a concept of "processor groups" or "cpu sets"
 that can we could either exploit or be exploited by
