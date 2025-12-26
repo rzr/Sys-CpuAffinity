@@ -1,5 +1,10 @@
 Revision history for Sys-CpuAffinity
 
+1.11	2016-11-28
+	(Untested) support for older solaris (<11.2) with processor_bind(2)
+        Linux sched_getaffinity fixes (RT #118730/Debian #844141)
+	Refactor XS code for FreeBSD
+
 1.10	2016-08-12
 	Support Multi-CPU Binding through processor_affinity(2) in solaris 11.2
 	Improved support for linux with >64 cpus

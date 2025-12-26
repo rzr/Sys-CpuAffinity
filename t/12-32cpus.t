@@ -61,7 +61,7 @@ ok($y2 == $clear1, "got affinity $y2 == $clear1");
 sub getSimpleMask {
   my $n = shift;
   my $r = int(rand() * $n);
-  return 1 << $r;
+  return TWO ** $r;
 }
 
 sub getUnbindMask {

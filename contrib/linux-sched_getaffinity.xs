@@ -23,10 +23,10 @@ void diag()
 {
   fprintf(stderr,"---\n");
   fprintf(stderr,"diag CPU_SETSIZE=%d\n", CPU_SETSIZE);
-  fprintf(stderr,"diag sizeof(__cpu_mask)=%d\n", sizeof(__cpu_mask));
-  fprintf(stderr,"diag __NCPUBITS=%d\n", __NCPUBITS);
-  fprintf(stderr,"diag sizeof(cpu_set_t)=%d\n", sizeof(cpu_set_t));
-  fprintf(stderr,"diag sizeof(pid_t)=%d\n", sizeof(pid_t));
+  fprintf(stderr,"diag sizeof(__cpu_mask)=%d\n", (int) sizeof(__cpu_mask));
+  fprintf(stderr,"diag __NCPUBITS=%d\n", (int) __NCPUBITS);
+  fprintf(stderr,"diag sizeof(cpu_set_t)=%d\n", (int) sizeof(cpu_set_t));
+  fprintf(stderr,"diag sizeof(pid_t)=%d\n", (int) sizeof(pid_t));
 }
 
 
@@ -41,31 +41,37 @@ xs_sched_getaffinity_get_affinity(pid,maskarray,debug_flag)
   CODE:
     int i, z;
     int r = 0;
+    int ncpus = __NCPUBITS;
     static cpu_set_t _set2, *_set1;
 
     if(debug_flag) diag();
     if(debug_flag) fprintf(stderr,"getaffinity0\n");
     _set1 = &_set2;
-    if(debug_flag) fprintf(stderr,"getaffinity1 pid=%d size=%d cpuset=%p\n",
-                           (int) pid, (int) CPU_SETSIZE, (void *) _set1);
+    if(debug_flag) fprintf(stderr,"getaffinity1 pid=%d size=%d %d cpuset=%p\n",
+                           (int) pid, (int) CPU_SETSIZE, (int) sizeof(cpu_set_t),
+                           ncpus, (void *) _set1);
     /* RT 94560: CPU_SETSIZE might be less than sizeof(cpu_set_t) ? */
     z = sched_getaffinity((pid_t) pid, sizeof(cpu_set_t), _set1);
-    if(debug_flag) fprintf(stderr,"getaffinity2\n");
+#ifdef CPU_COUNT
+    ncpus = CPU_COUNT(_set1);
+#endif
+    if(debug_flag) fprintf(stderr,"getaffinity2 ncpus=%d\n", ncpus);
     if (z) {
       if(debug_flag) fprintf(stderr,"getaffinity3 z=%d err=%d\n", z, errno);
       r = 0;
     } else {
       av_clear(maskarray);
       if(debug_flag) fprintf(stderr,"getaffinity5\n");
-      for (i = 0, r = 0; i < __NCPUBITS; i++) {
+      /* tests.reproducible-builds.org/debian/rb-pkg/unstable/i386/
+         libsys-cpuaffinity-perl.html:
+             __NCPUBITS=32 but taskset,/proc/cpuinfo say there are 34 cpus */
+      for (i = 0, r = 0; i < ncpus; i++) {
         if(debug_flag) fprintf(stderr,"getaffinity6 i=%d r=%d\n", i, r);
         if (CPU_ISSET(i, &_set2)) {
-          if(debug_flag) fprintf(stderr,"getaffinity7\n");
           r |= 1;
           av_push(maskarray, newSViv(i));
           if(debug_flag) fprintf(stderr,"getaffinity8 add %d to mask\n", i);
         }
-        if(debug_flag) fprintf(stderr,"getaffinity9\n");
       }
       if(debug_flag) fprintf(stderr,"getaffinitya r=%d\n",r);
     }

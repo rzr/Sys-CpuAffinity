@@ -4,20 +4,20 @@ use Carp;
 use warnings;
 use strict;
 use base qw(DynaLoader);
+use Data::Dumper;
 
 ## no critic (ProhibitBacktick,RequireExtendedFormatting)
 ## no critic (DotMatch,LineBoundary,Sigils,Punctuation,Quotes,Magic,Checked)
 ## no critic (NamingConventions::Capitalization,BracedFileHandle)
 
-our $VERSION = '1.10';
+our $VERSION = '1.11';
 our $DEBUG = $ENV{DEBUG} || 0;
 our $XS_LOADED = 0;
 eval { bootstrap Sys::CpuAffinity $VERSION; $XS_LOADED = 1 };
 
 sub TWO () { Math::BigInt->new(2) }
 
-sub import {
-}
+# sub import { }
 
 #
 # Development guide:
@@ -57,12 +57,13 @@ sub getAffinity {
     my $mask = 0
 	|| _getAffinity_with_taskset($pid)
 	|| _getAffinity_with_xs_sched_getaffinity($pid)
-	|| _getAffinity_with_xs_cpuset_getaffinity($pid)
 	|| _getAffinity_with_xs_pthread_self_getaffinity($pid)
 	|| _getAffinity_with_BSD_Process_Affinity($pid)
+	|| _getAffinity_with_xs_freebsd_getaffinity($pid)
 	|| _getAffinity_with_cpuset($pid)
 	|| _getAffinity_with_xs_processor_affinity($pid)
 	|| _getAffinity_with_pbind($pid)
+	|| _getAffinity_with_xs_processor_bind($pid)
         || _getAffinity_with_psaix($pid)
 	|| _getAffinity_with_xs_win32($pid)
 	|| _getAffinity_with_xs_irix_sysmp($pid)
@@ -77,21 +78,30 @@ sub getAffinity {
 sub _sanitize_set_affinity_args {
     my ($pid,$mask) = @_;
 
+    if ($DEBUG) {
+        print STDERR "sanitize_set_affinity_args: input is ",Dumper(@_),"\n";
+    }
+
     return if ! $pid;
     if (ref $mask eq 'ARRAY') {
 	$mask = _arrayToMask(@$mask);
+        if ($DEBUG) {
+            print STDERR "sanitize_set_affinity_args: ",
+                         Dumper($_[1])," => $mask\n";
+        }
     }
     my $np = getNumCpus();
     if ($mask == -1 && $np > 0) {
 	$mask = (TWO ** $np) - 1;
+        if ($DEBUG) {
+            print STDERR "sanitize_set_affinity_args: -1 => ",
+                         $mask," ",Dumper($mask),"\n";
+        }
     }
     if ($mask <= 0) {
 	carp "Sys::CpuAffinity: invalid mask $mask in call to setAffinty\n";
 	return;
     }
-
-    # www.cpantesters.org/cpan/report/07107190-b19f-3f77-b713-d32bba55d77f
-    # 1 << 32 == 1  caused test failure in v0.90
 
     my $maxmask = TWO ** $np;
     if ($maxmask > 1 && $mask >= $maxmask) {
@@ -121,9 +131,10 @@ sub setAffinity {
 	|| _setAffinity_with_taskset($pid,$mask)
 	|| _setAffinity_with_xs_sched_setaffinity($pid,$mask)
 	|| _setAffinity_with_BSD_Process_Affinity($pid,$mask)
-	|| _setAffinity_with_xs_cpuset_setaffinity($pid,$mask)  # XXX needs work
+	|| _setAffinity_with_xs_freebsd_setaffinity($pid,$mask)
         || _setAffinity_with_xs_processor_affinity($pid,$mask)
 	|| _setAffinity_with_pbind($pid,$mask)
+        || _setAffinity_with_xs_processor_bind($pid,$mask)
 	|| _setAffinity_with_xs_pthread_self_setaffinity($pid,$mask)
 	|| _setAffinity_with_bindprocessor($pid,$mask)
 	|| _setAffinity_with_cpuset($pid,$mask)
@@ -143,7 +154,8 @@ sub getNumCpus {
 	|| _getNumCpus_from_proc_stat()
 	|| _getNumCpus_from_lsdev()
 	|| _getNumCpus_from_bindprocessor()
-	|| _getNumCpus_from_prtconf()   # slower than bindprocessor, lsdev
+	|| _getNumCpus_from_BSD_Process_Affinity()
+	|| _getNumCpus_from_sysctl_freebsd()
 	|| _getNumCpus_from_sysctl()
 	|| _getNumCpus_from_dmesg_bsd()
         || _getNumCpus_from_xs_solaris()
@@ -154,6 +166,7 @@ sub getNumCpus {
 	|| _getNumCpus_from_system_profiler()
 	|| _getNumCpus_from_Win32API_System_Info()
 	|| _getNumCpus_from_Test_Smoke_SysInfo()
+	|| _getNumCpus_from_prtconf()   # slower than bindprocessor, lsdev
 	|| _getNumCpus_from_ENV()
 	|| _getNumCpus_from_taskset()
 	|| -1;
@@ -346,6 +359,23 @@ sub __set_aix_hints {
     }
 }
 
+sub _is_solarisMultiCpuBinding {
+    our $SOLARIS_HINTS;
+    return unless $^O =~ /solaris/i;
+    if (!$SOLARIS_HINTS || !$SOLARIS_HINTS->{multicpu}) {
+        local $?;
+        my ($maj,$min) = split /[.]/, qx(uname -v);
+        if ($? == 0 && ($maj > 11 || ($maj == 11 && $min >= 2))) {
+            $SOLARIS_HINTS->{multicpu} = 'yes';
+        } elsif (defined &xs_setaffinity_processor_affinity) {
+            $SOLARIS_HINTS->{multicpu} = 'yes';
+        } else {
+            $SOLARIS_HINTS->{multicpu} = 'no';
+        }
+    }
+    return $SOLARIS_HINTS->{multicpu} eq 'yes';
+}
+
 sub _getNumCpus_from_bindprocessor {
     return 0 if $^O !~ /aix/i;
     return 0 if !_configExternalProgram('bindprocessor');
@@ -430,6 +460,11 @@ sub _getNumCpus_from_xs_solaris {
     return $n || 0;
 }
 
+sub _getNumCpus_from_sysctl_freebsd {
+    return 0 unless defined &xs_num_cpus_freebsd;
+    return xs_num_cpus_freebsd() || 0;
+}
+
 sub _getNumCpus_from_dmesg_solaris {
     return 0 if $^O !~ /solaris/i;
     return 0 if !_configExternalProgram('dmesg');
@@ -470,7 +505,7 @@ sub _getNumCpus_from_sysctl {
     return 0 if !_configExternalProgram('sysctl');
     my $cmd = _configExternalProgram('sysctl');
     my @sysctl = qx($cmd -a 2> /dev/null);
-    my @results = grep { /^hw.ncpu\s*[:=]/ } @sysctl;
+    my @results = grep { /^hw.(?:avail|n)cpu\s*[:=]/ } @sysctl;
     _debug("sysctl output:\n@results");
     return 0 if @results == 0;
     my ($ncpus) = $results[0] =~ /[:=]\s*(\d+)/;
@@ -483,6 +518,11 @@ sub _getNumCpus_from_sysctl {
     if ($ncpus == 0) {
 	my $result = qx($cmd -n hw.ncpufound 2> /dev/null);
 	_debug("sysctl[3] result: $result");
+	$ncpus = 0 + $result;
+    }
+    if ($ncpus == 0) {
+	my $result = qx($cmd -n hw.availcpu 2> /dev/null);
+	_debug("sysctl[4] result: $result");
 	$ncpus = 0 + $result;
     }
 
@@ -505,7 +545,7 @@ sub _getNumCpus_from_hinv {   # NOT TESTED irix
     return 0 if !_configExternalProgram('hinv');
     my $cmd = _configExternalProgram('hinv');
 
-    # 1.01-1.10: debug
+    # test debug
     if ($Sys::CpuAffinity::IS_TEST && !$Sys::CpuAffinity::HINV_CALLED++) {
 	print STDERR "$cmd output:\n";
 	print STDERR qx($cmd);
@@ -598,6 +638,8 @@ sub _getNumCpus_from_taskset {
     # neither of these approaches are foolproof
     # 1. read affinity mask of PID 1
     # 2. try different affinity settings until it fails
+    #
+    # also I don't know what will happen if there are >64 cpus
 
     my $result = qx($taskset -p 1 2> /dev/null);
     my ($mask) = $result =~ /:\s+(\w+)/;
@@ -833,6 +875,7 @@ sub _getAffinity_with_xs_DEBUG_sched_getaffinity {
     # to debug errors in xs_sched_getaffinity_get_affinity
     # during t/11-exercise-all.t
     my $pid = shift;
+    return 0 if !defined &xs_sched_getaffinity_get_affinity;
     my @mask;
     my $r = xs_sched_getaffinity_get_affinity($pid,\@mask,1);
     if ($r) {
@@ -875,7 +918,7 @@ sub _getAffinity_with_pbind {
         }
     } elsif ($pbind_output =~ /: (\d+)/) {
         my $bound_processor = $1;
-        return 1 << $bound_processor;
+        return TWO ** $bound_processor;
     } elsif ($pbind_output =~ / bound to proces\S+\s+(.+)\.$/) {
         my $cpus = $1;
         if (!defined($cpus)) {
@@ -933,17 +976,29 @@ sub _getAffinity_with_xs_processor_affinity {
     return _arrayToMask(@mask);
 }
 
+sub _getAffinity_with_xs_processor_bind {
+    my ($pid) = @_;
+    return 0 if !defined &xs_getaffinity_processor_bind;
+    return 0 if $^O !~ /solaris/i;
+    return 0 if _is_solarisMultiCpuBinding();
+    my @mask = ();
+    my $ret = xs_getaffinity_processor_bind($pid,\@mask);
+    if ($ret == 0) {
+        return 0;
+    }
+    _debug("affinity with getaffinity_xs_processor_affinity: @mask");
+    return _arrayToMask(@mask);
+}
+
 sub _getAffinity_with_BSD_Process_Affinity {
     my ($pid) = @_;
     return 0 if $^O !~ /bsd/i;
-    return 0 if !_configModule('BSD::Process::Affinity');
+    return 0 if !_configModule('BSD::Process::Affinity','0.04');
 
     my $mask;
     if (! eval {
-        $mask = BSD::Process::Affinity
-            ->get_process_mask($pid)
-            ->to_bits()->to_Dec();
-        BSD::Process::Affinity->get_process_mask($pid)->get_cpusetid();
+	my $affinity = BSD::Process::Affinity::get_process_mask($pid);
+	$mask = $affinity->get;
         1 }  ) {
         # $MODULE{'BSD::Process::Affinity'} = 0
         _debug("error in _setAffinity_with_BSD_Process_Affinity: $@");
@@ -971,10 +1026,15 @@ sub _getAffinity_with_cpuset {
     return 0;
 }
 
-sub _getAffinity_with_xs_cpuset_getaffinity {
-    my ($pid) = @_;
-    return 0 if !defined &xs_getaffinity_cpuset_get_affinity;
-    return xs_getaffinity_cpuset_get_affinity($pid);
+sub _getAffinity_with_xs_freebsd_getaffinity {
+    my $pid = shift;
+    return 0 if !defined &xs_getaffinity_freebsd;
+    my @mask = ();
+    my $ret = xs_getaffinity_freebsd($pid,\@mask);
+    if ($ret == 0) {
+	return 0;
+    }
+    return _arrayToMask(@mask);
 }
 
 sub _getAffinity_with_xs_win32 {
@@ -1187,17 +1247,23 @@ sub _setAffinity_with_xs_sched_setaffinity {
 sub _setAffinity_with_BSD_Process_Affinity {
     my ($pid,$mask) = @_;
     return 0 if $^O !~ /bsd/i;
-    return 0 if !_configModule('BSD::Process::Affinity');
+    return 0 if !_configModule('BSD::Process::Affinity','0.04');
 
     if (not eval {
-        BSD::Process::Affinity
-            ->get_process_mask($pid)
-            ->from_num($mask)
-            ->update();
+	my $affinity = BSD::Process::Affinity::get_process_mask($pid);
+	$affinity->set($mask)->update;
         1}) {
         _debug("error in _setAffinity_with_BSD_Process_Affinity: $@");
         return 0;
     }
+}
+
+sub _getNumCpus_from_BSD_Process_Affinity {
+    return 0 if $^O !~ /bsd/i;
+    return 0 if !_configModule('BSD::Process::Affinity','0.04');
+    my $n = BSD::Process::Affinity::current_set()->get;
+    $n = log( $n+1.01 ) / log(2);
+    return int($n);
 }
 
 sub _setAffinity_with_bindprocessor {
@@ -1247,7 +1313,20 @@ sub _setAffinity_with_xs_processor_affinity {
     if ($ret == 0) {
         return 0;
     }
-    return _arrayToMask(@mask);
+    return 1;
+}
+
+sub _setAffinity_with_xs_processor_bind {
+    my ($pid,$mask) = @_;
+    return 0 if $^O !~ /solaris/i;
+    return 0 if !defined &xs_setaffinity_processor_bind;
+    return 0 if _is_solarisMultiCpuBinding();
+    my @mask = _maskToArray($mask);
+    my $ret = xs_setaffinity_processor_bind($pid, \@mask);
+    if ($ret == 0) {
+        return 0;
+    }
+    return 1;
 }
 
 sub _setAffinity_with_cpuset {
@@ -1261,11 +1340,11 @@ sub _setAffinity_with_cpuset {
     return !$c1;
 }
 
-sub _setAffinity_with_xs_cpuset_setaffinity {
+sub _setAffinity_with_xs_freebsd_setaffinity {
     my ($pid,$mask) = @_;
-    # return 0 if $^O !~ /freebsd/i;
-    return 0 if !defined &xs_cpuset_set_affinity;
-    return xs_cpuset_set_affinity($pid,$mask);
+    return 0 if !defined &xs_setaffinity_freebsd;
+    my @mask = _maskToArray($mask);
+    return xs_setaffinity_freebsd($pid,\@mask);
 }
 
 sub _setAffinity_with_xs_win32 {
@@ -1408,13 +1487,20 @@ our %INLINE_CODE = ();
 
 sub _configModule {
     my $module = shift;
+    my $version = shift || "";
     return $MODULE{$module} if defined $MODULE{$module};
 
-    if (eval "require $module") {                 ## no critic (StringyEval)
-        _debug("module $module is available.");
-        return $MODULE{$module} = 1;
+    if (eval "require $module") {        ## no critic (StringyEval)
+	my $v = eval "\$$module" . "::VERSION";
+	if (!$@ && (!$version || $version <= $v)) {
+	    _debug("module $module is available.");
+	    return $MODULE{$module} = 1;
+	} else {
+	    _debug("module $module $version not available ($v)");
+	    return $MODULE{$module} = 0;
+	}
     } else {
-        _debug("module $module not available: $@");
+        _debug("module $module $version not available: $@");
         return $MODULE{$module} = 0;
     }
 }
@@ -1552,7 +1638,7 @@ Sys::CpuAffinity - Set CPU affinity for processes
 
 =head1 VERSION
 
-Version 1.10
+Version 1.11
 
 =head1 SYNOPSIS
 
@@ -1588,7 +1674,7 @@ run an external program that might be installed on your system,
 or invoke some C code to access your system libraries.
 Usually, a technique is applicable to only a single
 or small group of operating systems, and on any particular
-system, the vast majority of techniques would fail.
+system, most of the techniques would fail.
 Regardless of your particular system and configuration,
 it is hoped that at least one of the techniques will work
 and you will be able to get and set the CPU affinities of
@@ -1655,7 +1741,9 @@ Retrieves the current CPU affinity for the process
 with the specified process ID.
 In scalar context, returns a bit-mask of the CPUs that the
 process has affinity for, with the least significant bit
-denoting CPU #0.
+denoting CPU #0. The return value is actually a
+L<Math::BigInt> value, so it can store a bit mask on systems
+with an arbitrarily high number of CPUs.
 
 In list context, returns a list of integers indicating the
 indices of the CPU that the process has affinity for.
@@ -1783,8 +1871,8 @@ how to get/set affinities on BSD systems.
 L<Test::Smoke::SysInfo|Test::Smoke::SysInfo> has some fairly portable
 code for detecting the number of processors.
 
-L<http://devio.us/> for providing a free OpenBSD account so this
-module could be tested on that platform.
+L<http://devio.us/> provided a free OpenBSD account that allowed
+this module to be tested on that platform.
 
 =head1 AUTHOR
 

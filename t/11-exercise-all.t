@@ -110,7 +110,7 @@ sub EXERCISE_GET_AFFINITY {
 	printf "%s\n", $z || 0;
 	$success += ($z||0) > 0;
 
-	if ($z > 0) {
+	if ($z && $z > 0) {
 	    if ($ok == 0) {
 		$ok = $z;
 	    } elsif ($ok != $z) {

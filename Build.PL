@@ -213,7 +213,7 @@ if ($^O =~ /netbsd/i) {
 
 my $recommends = { 'ExtUtils::CBuilder' => 0.15 };
 if ($^O =~ /freebsd/i) {
-   $recommends->{'BSD::Process::Affinity'} = 0.02;
+   $recommends->{'BSD::Process::Affinity'} = 0.04;
 }
 if ($^O eq 'MSWin32' || $^O =~ /cygwin/i) {
    $recommends->{'Win32::API'} = 0.51;
@@ -223,18 +223,22 @@ my $builder = $builderclass->new(
 	module_name         => 'Sys::CpuAffinity',
 	license             => 'perl',
 	dist_author         => q[Marty O'Brien <mob@cpan.org>],
-        dist_version        => '1.10',
-	#dist_version_from   => 'lib/Sys/CpuAffinity.pm',
+        #dist_version        => '1.11',
+	dist_version_from   => 'lib/Sys/CpuAffinity.pm',
 	build_requires      => {
 		'Module::Build'      => 0.25,
 		'Test::More'         => 0,
+	},
+	configure_requires      => {
+		'Module::Build'      => 0.25,
 	},
 	recommends          => $recommends,
 	meta_merge => {
 	    resources       => { bugtracker  => $bugtracker_url },
 	    keywords        => [ qw/affinity/ ],
 	},
-	add_to_cleanup      => [ 'Sys-CpuAffinity-*', '_build', '*.exp',
+        add_to_cleanup      => [ 'Sys-CpuAffinity-*', '_build', '*.exp',
+                                 '*.exp_old',
 			         '*.xs.o', 'lib/xs/*', 
 				 'lib/Sys/CpuAffinity.c',
 				 'lib/Sys/CpuAffinity.o',

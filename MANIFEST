@@ -6,14 +6,14 @@ Makefile.PL
 README
 contrib/contrib.doc
 contrib/cpusetGetCPUCount.xs
-contrib/cpuset_getaffinity.xs
-contrib/cpuset_setaffinity.xs
 contrib/fortytwo.xs
+contrib/freebsd_cpuset.xs
 contrib/irix_sysmp.xs
 contrib/linux-sched_getaffinity.xs
 contrib/linux-sched_setaffinity.xs
 contrib/pthread_affinity_np.xs
 contrib/solaris_processor_affinity.xs
+contrib/solaris_processor_bind.xs
 contrib/win32_processaffinity.xs
 contrib/win32_system_info.xs
 contrib/win32_system_info_alt.xs
