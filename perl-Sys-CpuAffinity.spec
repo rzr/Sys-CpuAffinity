@@ -72,4 +72,7 @@ make test
 
 
 %changelog
+* Fri Dec 26 2025 Philippe Coval <philippe.coval@vates.tech> 1.12-1
+- new package built with tito
+
 %autochangelog
