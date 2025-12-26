@@ -1,5 +1,5 @@
 Name:           perl-Sys-CpuAffinity
-Version:        1.12
+Version:        1.13
 Release:        1%{?dist}
 Summary:        Sys::CpuAffinity - Set CPU affinity for processes
 
@@ -72,5 +72,8 @@ make test
 
 
 %changelog
+* Fri Dec 26 2025 Philippe Coval <philippe.coval@vates.tech> 1.13-1
+- new package built with tito
+
 * Fri Dec 26 2025 Philippe Coval <philippe.coval@vates.tech> 1.12-1
 - Initial Fedora RPM version
