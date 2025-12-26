@@ -1,0 +1,8 @@
+# .gitignore
+
+**/tmp/
+*.tmp
+*~
+.idea/
+.DS_Store
+__MACOSX/
