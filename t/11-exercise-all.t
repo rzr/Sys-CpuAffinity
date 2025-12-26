@@ -26,7 +26,7 @@ sub TWO () { goto &Sys::CpuAffinity::TWO }
 #
 # Hopefully, we'll find at least one tool for
 # each task (count cpus, get affinity, set
-# affinity) that will work for you. And that's
+# affinity) that will work for you, which is
 # all we need.
 #
 
@@ -123,8 +123,13 @@ sub EXERCISE_GET_AFFINITY {
       recommend($^O, 'getAffinity');
     }
     print "\n\n";
-    ok($ok > 0, "at least one _getAffinity_XXX method works and "
-                . "all other methods are consistent");
+  SKIP: {
+      if ($ok == 0 && $^O =~ /darwin|MacOS|openbsd/i) {
+          skip "getAffinity/setAffinity not expected to be supported on $^O", 1;
+      }
+      ok($ok > 0, "at least one _getAffinity_XXX method works and "
+         . "all other methods are consistent");
+    }
 }
 
 #

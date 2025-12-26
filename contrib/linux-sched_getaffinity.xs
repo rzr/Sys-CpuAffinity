@@ -33,13 +33,14 @@ void diag()
 MODULE = Sys::CpuAffinity        PACKAGE = Sys::CpuAffinity
 
 
-long
-xs_sched_getaffinity_get_affinity(pid,debug_flag)
+int
+xs_sched_getaffinity_get_affinity(pid,maskarray,debug_flag)
 	int pid
+        AV *maskarray
 	int debug_flag
   CODE:
     int i, z;
-    long r;
+    int r = 0;
     static cpu_set_t _set2, *_set1;
 
     if(debug_flag) diag();
@@ -54,22 +55,20 @@ xs_sched_getaffinity_get_affinity(pid,debug_flag)
       if(debug_flag) fprintf(stderr,"getaffinity3 z=%d err=%d\n", z, errno);
       r = 0;
     } else {
+      av_clear(maskarray);
       if(debug_flag) fprintf(stderr,"getaffinity5\n");
       for (i = 0, r = 0; i < __NCPUBITS; i++) {
-        if(debug_flag) fprintf(stderr,"getaffinity6 i=%d r=%ld\n", i, r);
+        if(debug_flag) fprintf(stderr,"getaffinity6 i=%d r=%d\n", i, r);
         if (CPU_ISSET(i, &_set2)) {
           if(debug_flag) fprintf(stderr,"getaffinity7\n");
-          r |= 1L << i;
-          if(debug_flag) fprintf(stderr,"getaffinity8 r=%ld\n", r);
+          r |= 1;
+          av_push(maskarray, newSViv(i));
+          if(debug_flag) fprintf(stderr,"getaffinity8 add %d to mask\n", i);
         }
         if(debug_flag) fprintf(stderr,"getaffinity9\n");
       }
-      if(debug_flag) fprintf(stderr,"getaffinitya\n");
+      if(debug_flag) fprintf(stderr,"getaffinitya r=%d\n",r);
     }
     RETVAL = r;
   OUTPUT:
     RETVAL
-
-
-
-

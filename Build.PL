@@ -80,6 +80,17 @@ on this platform generally
 ;
 }
 print "\n";
+
+if ($^O =~ /darwin|MacOS|openbsd/i) {
+    print <<"";
+$^O users: no known method to support getting and setting CPU affinity
+on this platform. You should only expect the  Sys::CpuAffinity::getNumCpus
+function from this distribution to work.
+
+;
+}
+
+
 unlink "lib/Sys/CpuAffinity.xs";
 
 
@@ -109,7 +120,8 @@ my $builderclass = Module::Build->subclass(
            print "$@\n" if $DEBUG;
            File::Copy::move($xs_file, "contrib/fail/");
        } else {
-           print "\n\nSuccessfully compiled $xs_file\n\n";
+           print "\n\n---------------\nSuccessfully compiled $xs_file\n";
+           print "---------------\n\n";
            push @successfully_compiled, $xs_file;
            File::Copy::move($xs_file, "contrib/ok/");
        }
@@ -126,9 +138,10 @@ still work without any XS code, so let's not worry
 about this just yet.
 ];
      } else {
+       print "======================================\n";
        print "Successfully compiled:\n\n\t";
        print join "\n\t", @successfully_compiled;
-       print "\n\n";
+       print "\n======================================\n";
      }
    }
 
@@ -210,7 +223,7 @@ my $builder = $builderclass->new(
 	module_name         => 'Sys::CpuAffinity',
 	license             => 'perl',
 	dist_author         => q[Marty O'Brien <mob@cpan.org>],
-        dist_version        => '1.09',
+        dist_version        => '1.10',
 	#dist_version_from   => 'lib/Sys/CpuAffinity.pm',
 	build_requires      => {
 		'Module::Build'      => 0.25,
@@ -221,7 +234,7 @@ my $builder = $builderclass->new(
 	    resources       => { bugtracker  => $bugtracker_url },
 	    keywords        => [ qw/affinity/ ],
 	},
-	add_to_cleanup      => [ 'Sys-CpuAffinity-*', '_build', 
+	add_to_cleanup      => [ 'Sys-CpuAffinity-*', '_build', '*.exp',
 			         '*.xs.o', 'lib/xs/*', 
 				 'lib/Sys/CpuAffinity.c',
 				 'lib/Sys/CpuAffinity.o',

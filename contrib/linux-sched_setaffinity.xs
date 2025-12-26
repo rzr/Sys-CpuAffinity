@@ -14,17 +14,16 @@ MODULE = Sys::CpuAffinity        PACKAGE = Sys::CpuAffinity
 int
 xs_sched_setaffinity_set_affinity(pid,mask)
 	int pid
-	long mask
+	AV *mask
     CODE:
 	    static cpu_set_t cpumask;
 	    unsigned int len = sizeof(cpumask);
 	    int i,r;
 	
 	    CPU_ZERO(&cpumask);
-	    for (i=0; i < __NCPUBITS; i++) {
-		if (0 != (mask & (1 << i))) {
-		    CPU_SET(i, &cpumask);
-		}
+            for (i=0; i <= av_len(mask); i++) {
+                int c = SvIV(*av_fetch(mask,i,0));
+                CPU_SET(c, &cpumask);
 	    }
 	    r = sched_setaffinity(pid, len, &cpumask);
 	    if (r != 0) {
@@ -51,5 +50,4 @@ xs_sched_setaffinity_set_affinity(pid,mask)
 	    RETVAL = !r;
     OUTPUT:
 	RETVAL
-
 

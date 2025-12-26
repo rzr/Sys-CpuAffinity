@@ -1,8 +1,12 @@
 Revision history for Sys-CpuAffinity
 
+1.10	2016-08-12
+	Support Multi-CPU Binding through processor_affinity(2) in solaris 11.2
+	Improved support for linux with >64 cpus
+
 1.09	2016-07-29
 	Improved support for solaris, including binding to arbitrary
-	subsets of all cores.
+	subsets of all cores with pbind(1M)
 	Prefer  Math::BigInt->new(2)**$n  to  1<<$n  to support >64 cores.
 	Improved support for aix
 
