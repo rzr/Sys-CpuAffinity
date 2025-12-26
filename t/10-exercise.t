@@ -121,11 +121,13 @@ if (defined($pid) && $pid == 0) {
   my $y4 = Sys::CpuAffinity::getAffinity($$) || 0;
   print F "getAffinity2:$y4\n";
   close F;
+  sleep 1;
 
   exit 0;
 }
 
 CORE::wait;
+sleep 1;
 
 if ($ENV{DEBUG}) {
   open F, '<', $f;

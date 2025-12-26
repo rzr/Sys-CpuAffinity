@@ -20,6 +20,12 @@ CODE:
 	 * Return < 0 on error.
 	 * Return current thread affinity on success.
 	 */
+#ifndef DEBIAN
+        /* Ubuntu 15.10 build log filter will abort on the implicit  *
+         * int-to-pointer conversion below, even though this xs file *
+         * won't compile -- hide all this code under Debian          *
+         * -- http://aunchpadlibrarian.net/222688017                 *
+                  /buildlog_ubuntu-wily-amd64.libsys-cpuaffinity-perl_1.06-1ubuntu1~wily1_BUILDING.txt.gz */
 
 	cpuset_t *cset;
 	pthread_t pth;
@@ -59,6 +65,7 @@ CODE:
 	if (cset != NULL) {
 	    cpuset_destroy(cset);
 	}
+#endif
 	RETVAL = affinity;
 OUTPUT:
 	RETVAL
@@ -72,6 +79,7 @@ CODE:
 	 * For use with NetBSD. Might need to be run as super-user.
 	 * Returns 0 on error, 1 on success.
 	 */
+#ifndef DEBIAN
 	cpuset_t *cset;
 	pthread_t pth;
 	cpuid_t icpu;
@@ -104,6 +112,7 @@ CODE:
 	if (cset != NULL) {
 	    cpuset_destroy(cset);
 	}
+#endif
 	RETVAL = result;
 OUTPUT:
 	RETVAL

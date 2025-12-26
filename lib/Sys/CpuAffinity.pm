@@ -8,7 +8,7 @@ use base qw(DynaLoader);
 ## no critic (DotMatch,LineBoundary,Sigils,Punctuation,Quotes,Magic,Checked)
 ## no critic (NamingConventions::Capitalization,BracedFileHandle)
 
-our $VERSION = '1.06';
+our $VERSION = '1.07';
 our $DEBUG = $ENV{DEBUG} || 0;
 our $XS_LOADED = 0;
 eval { bootstrap Sys::CpuAffinity $VERSION; $XS_LOADED = 1 };
@@ -445,7 +445,7 @@ sub _getNumCpus_from_hinv {   # NOT TESTED irix
     return 0 if !_configExternalProgram('hinv');
     my $cmd = _configExternalProgram('hinv');
 
-    # 1.01-1.06: debug
+    # 1.01-1.07: debug
     if ($Sys::CpuAffinity::IS_TEST && !$Sys::CpuAffinity::HINV_CALLED++) {
 	print STDERR "$cmd output:\n";
 	print STDERR qx($cmd);
@@ -539,7 +539,7 @@ sub _getNumCpus_from_taskset {
     my $result = qx($taskset -p 1 2> /dev/null);
     my ($mask) = $result =~ /:\s+(\w+)/;
     if ($mask) {
-	my $n = 1+hex($mask);
+	my $n = 1+__hex($mask);
 	return int(0.5+log($n)/log(2));
     }
 
@@ -742,7 +742,19 @@ sub _getAffinity_with_taskset {
     return 0 if ! $taskset_output;
     my ($mask) = $taskset_output =~ /: (\S+)/;
     _debug("affinity with taskset: $mask");
-    return hex $mask;
+    return __hex($mask);
+}
+
+sub __hex {
+    # hex() method with better support for input > 0xffffffff
+    my $mask = shift;
+    if (length($mask) > 8) {
+        my $mask2 = substr($mask,-8);
+        my $mask1 = substr($mask,0,-8);
+        return hex($mask2) + (__hex($mask1) << 32);
+    } else {
+        return hex($mask);
+    }
 }
 
 sub _getAffinity_with_xs_sched_getaffinity {
@@ -1439,7 +1451,7 @@ Sys::CpuAffinity - Set CPU affinity for processes
 
 =head1 VERSION
 
-Version 1.06
+Version 1.07
 
 =head1 SYNOPSIS
 
@@ -1544,7 +1556,7 @@ In scalar context, returns a bit-mask of the CPUs that the
 process has affinity for, with the least significant bit
 denoting CPU #0.
 
-In array context, returns a list of integers indicating the
+In list context, returns a list of integers indicating the
 indices of the CPU that the process has affinity for.
 
 So for example, if a process in an 8 core machine
@@ -1553,11 +1565,11 @@ in scalar context, C<getAffinity()> would return
 
     (1 << 2) | (1 << 6) | (1 << 7) ==> 196
 
-and in array context, it would return
+and in list context, it would return
 
     (2, 6, 7)
 
-The function may return 0 or C<undef> in case of an error
+A return value of 0 or C<undef> indicates an error
 such as an invalid process ID.
 
 =back
@@ -1602,7 +1614,8 @@ processors on this system.
 =head1 BUGS AND LIMITATIONS
 
 This module may not work or produce undefined results on
-systems with more than 32 CPUs.
+systems with more than 32 CPUs, though support for these
+larger systems has improved with v1.07.
 
 Please report any bugs or feature requests to
 C<bug-sys-cpuaffinity at rt.cpan.org>, or through
@@ -1678,7 +1691,7 @@ Marty O'Brien, C<< <mob at cpan.org> >>
 
 =head1 LICENSE AND COPYRIGHT
 
-Copyright 2010-2013 Marty O'Brien.
+Copyright 2010-2016 Marty O'Brien.
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of either: the GNU General Public License as published
@@ -1810,5 +1823,3 @@ Issues in 1.02-1.04
       /www.cpantesters.org/cpan/report/92ab9df8-a6fc-11e0-829d-5250641c9bbe
      xs_sched_getaffinity keeps segfaulting (x4)
   4. getNumCpus_from_Win32API_System_Info: garbage result on WOW64 systems
-
-

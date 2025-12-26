@@ -1,5 +1,9 @@
 Revision history for Sys-CpuAffinity
 
+1.07	2016-07-22
+	Improved support for systems with >32 cpus
+	Workaround for overzealous Ubuntu build log filter
+
 1.06	2013-02-01
 	Prealloc mask strings to avoid buffer overflow in Win32::API calls.
 
@@ -8,12 +12,12 @@ Revision history for Sys-CpuAffinity
 	_getNumCpus_from_dmesg_bsd now handles duplicate msgs in dmesg output
 
 1.04	2011-09-29
-        Tweaks to linux XS code which may or may not reduce mysterious
-        segfaults.
+	Tweaks to linux XS code which may or may not reduce mysterious
+	segfaults.
 
 1.03	2011-08-30
 	Implemented IsWow64 detection in Windows.
-        Using taskset in linux to count CPUs.
+	Using taskset in linux to count CPUs.
 
 1.02	2011-06-17
 	Removed trivial hello.xs code snippet on the theory that it results
