@@ -50,7 +50,14 @@ $z = Sys::CpuAffinity::setAffinity($$, $clearMask);
 ok($z != 0, "clear simple setCpuAffinity returned non-zero");
 
 my $y2 = Sys::CpuAffinity::getAffinity($$) || 0;
-ok($y2 + 1 == TWO**$n, 
+
+# Bizarre - Lucas Nussbaum reports a test where
+#     $y2 == TWO ** $n - 1    is true, but
+#     $y2 + 1 == TWO ** $n    is false.
+# Added some Math::BigInt sanity checks in t/02-available.t but
+# we'll favor the  $y2 == TWO ** $n - 1  check for now
+
+ok($y2 == (TWO**$n) - 1, 
    "bind to all processors successful $y2 == ".(TWO**$n)."-1") or do {
        print STDERR "getAffinity() is $y2, expected ",(TWO**$n)-1,"\n";
        print STDERR "comp1 = ",$y2+1 == TWO**$n,"\n";
@@ -91,7 +98,7 @@ $z = Sys::CpuAffinity::setAffinity($$, -1) or do {
 ok($z != 0, "setAffinity(-1) returned non-zero");
 
 my $y4 = Sys::CpuAffinity::getAffinity($$) || 0;
-ok($y4 == (TWO**$n)-1 && $y4+1 == TWO**$n,
+ok($y4 == (TWO**$n) - 1,
    "setAffinity(-1) binds to all processors") or do {
        print STDERR "getAffinity() after setAffinity(-1) is $y4, expected ",
                     (TWO**$n)-1,"\n";

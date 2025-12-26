@@ -47,9 +47,11 @@ xs_sched_getaffinity_get_affinity(pid,maskarray,debug_flag)
     if(debug_flag) diag();
     if(debug_flag) fprintf(stderr,"getaffinity0\n");
     _set1 = &_set2;
-    if(debug_flag) fprintf(stderr,"getaffinity1 pid=%d size=%d %d cpuset=%p\n",
-                           (int) pid, (int) CPU_SETSIZE, (int) sizeof(cpu_set_t),
-                           ncpus, (void *) _set1);
+    if(debug_flag) {
+      fprintf(stderr,"getaffinity1 pid=%d size=%d %d ncpu=%d cpuset=%p\n",
+              (int) pid, (int) CPU_SETSIZE, (int) sizeof(cpu_set_t),
+              ncpus, (void *) _set1);
+    }
     /* RT 94560: CPU_SETSIZE might be less than sizeof(cpu_set_t) ? */
     z = sched_getaffinity((pid_t) pid, sizeof(cpu_set_t), _set1);
 #ifdef CPU_COUNT

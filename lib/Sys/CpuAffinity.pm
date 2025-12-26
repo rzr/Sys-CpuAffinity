@@ -10,7 +10,7 @@ use Data::Dumper;
 ## no critic (DotMatch,LineBoundary,Sigils,Punctuation,Quotes,Magic,Checked)
 ## no critic (NamingConventions::Capitalization,BracedFileHandle)
 
-our $VERSION = '1.11';
+our $VERSION = '1.12';
 our $DEBUG = $ENV{DEBUG} || 0;
 our $XS_LOADED = 0;
 eval { bootstrap Sys::CpuAffinity $VERSION; $XS_LOADED = 1 };
@@ -1030,7 +1030,24 @@ sub _getAffinity_with_xs_freebsd_getaffinity {
     my $pid = shift;
     return 0 if !defined &xs_getaffinity_freebsd;
     my @mask = ();
-    my $ret = xs_getaffinity_freebsd($pid,\@mask);
+    my $ret = xs_getaffinity_freebsd($pid,\@mask,0);
+    if ($ret == 0) {
+	return 0;
+    }
+    return _arrayToMask(@mask);
+}
+
+sub _getAffinity_with_xs_freebsd_getaffinity_debug {
+    my $pid = shift;
+    if (!defined &xs_getaffinity_freebsd) {
+        if ($^O =~ /bsd/) {
+            warn "\$^O=$^O, xs_getaffinity_freebsd not defined";
+        }
+        return;
+    }
+    my @mask = ();
+    my $ret = xs_getaffinity_freebsd($pid,\@mask,1);
+    warn "return value from xs_getaffinity_freebsd: $ret";
     if ($ret == 0) {
 	return 0;
     }
@@ -1638,7 +1655,7 @@ Sys::CpuAffinity - Set CPU affinity for processes
 
 =head1 VERSION
 
-Version 1.11
+Version 1.12
 
 =head1 SYNOPSIS
 
@@ -1880,7 +1897,7 @@ Marty O'Brien, C<< <mob at cpan.org> >>
 
 =head1 LICENSE AND COPYRIGHT
 
-Copyright 2010-2016 Marty O'Brien.
+Copyright 2010-2017 Marty O'Brien.
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of either: the GNU General Public License as published
