@@ -8,7 +8,7 @@ build_requires:
 configure_requires:
   Module::Build: '0.42'
 dynamic_config: 1
-generated_by: 'Module::Build version 0.4214, CPAN::Meta::Converter version 2.150005'
+generated_by: 'Module::Build version 0.4211, CPAN::Meta::Converter version 2.150005'
 keywords:
   - affinity
 license: perl
@@ -19,11 +19,11 @@ name: Sys-CpuAffinity
 provides:
   Sys::CpuAffinity:
     file: lib/Sys/CpuAffinity.pm
-    version: '1.07'
+    version: '1.08'
 recommends:
   ExtUtils::CBuilder: '0.15'
 resources:
   bugtracker: http://rt.cpan.org/NoAuth/Bugs.html?Dist=Sys-CpuAffinity
   license: http://dev.perl.org/licenses/
-version: '1.07'
-x_serialization_backend: 'CPAN::Meta::YAML version 0.016'
+version: '1.08'
+x_serialization_backend: 'CPAN::Meta::YAML version 0.012'

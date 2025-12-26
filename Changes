@@ -1,5 +1,8 @@
 Revision history for Sys-CpuAffinity
 
+1.08	2016-07-22
+	RT #94560-even more improved support for Linux systems with >32 cpus
+
 1.07	2016-07-22
 	Improved support for systems with >32 cpus
 	Workaround for overzealous Ubuntu build log filter

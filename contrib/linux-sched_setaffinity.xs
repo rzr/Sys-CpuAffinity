@@ -14,14 +14,14 @@ MODULE = Sys::CpuAffinity        PACKAGE = Sys::CpuAffinity
 int
 xs_sched_setaffinity_set_affinity(pid,mask)
 	int pid
-	int mask
+	long mask
     CODE:
 	    static cpu_set_t cpumask;
 	    unsigned int len = sizeof(cpumask);
 	    int i,r;
 	
 	    CPU_ZERO(&cpumask);
-	    for (i=0; i<32 && i<CPU_SETSIZE; i++) {
+	    for (i=0; i < __NCPUBITS; i++) {
 		if (0 != (mask & (1 << i))) {
 		    CPU_SET(i, &cpumask);
 		}
