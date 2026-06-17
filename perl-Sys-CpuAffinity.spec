@@ -1,11 +1,12 @@
 Name:           perl-Sys-CpuAffinity
 Version:        1.12
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Sys::CpuAffinity - Set CPU affinity for processes
 
 License:        GPL-1.0-or-later OR Artistic-1.0-Perl
 URL:            http://search.cpan.org/dist/Sys-CpuAffinity/
 Source0:        https://cpan.metacpan.org/authors/id/M/MO/MOB/Sys-CpuAffinity-%{version}.tar.gz
+Patch0:         perl-Sys-CpuAffinity-fix-xsubpp-indent.patch
 
 #BuildArch:      
 BuildRequires:  perl
@@ -42,7 +43,7 @@ you will be able to get and set the CPU affinities of your processes.
 
 
 %prep
-%autosetup -n Sys-CpuAffinity-%{version}
+%autosetup -n Sys-CpuAffinity-%{version} -p1
 
 
 %build
@@ -72,7 +73,9 @@ make test
 
 
 %changelog
+* Wed Jun 17 2026 Laudin Molina <laudin.molina@gmail.com> 1.12-2
+- fix: add patch to enable building in Fedora 44
+  Fedora 44 uses xsubpp version 3.61, that fails to build
+  `solaris_processor_bind.xs` because of an invalid systax.
 * Fri Dec 26 2025 Philippe Coval <philippe.coval@vates.tech> 1.12-1
 - new package built with tito
-
-%autochangelog
