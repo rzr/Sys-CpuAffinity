@@ -1,0 +1,12 @@
+diff -ruN Sys-CpuAffinity-1.12.orig/contrib/solaris_processor_bind.xs Sys-CpuAffinity-1.12/contrib/solaris_processor_bind.xs
+--- Sys-CpuAffinity-1.12.orig/contrib/solaris_processor_bind.xs	2017-01-13 16:09:35.000000000 +0100
++++ Sys-CpuAffinity-1.12/contrib/solaris_processor_bind.xs	2026-06-17 23:51:13.609014922 +0200
+@@ -131,7 +131,7 @@
+ 
+ 
+ int
+-  xs_getaffinity_processor_bind(pid,mask)
++xs_getaffinity_processor_bind(pid,mask)
+ 	int pid
+         AV *mask
+     CODE:
